@@ -1,5 +1,6 @@
 import { MODULE_BY_KEY } from '@/data/modules'
 import { allRows, listRows, resetRows, saveRows } from '@/data/local-store'
+import { assertDeformationVerifyAllowed } from '@/api/consultation-service'
 import type { ActionResult, EntryRow, ModuleMeta, OverviewResult, PageResult } from '@/data/types'
 
 // 会写进数据的「往回走」动作：命中就把这条记录标成异常态，看板上能一眼看出来。
@@ -42,6 +43,13 @@ export function runAction(key: string, id: number, action: string): ActionResult
   const current = String(rows[index].status)
   if (current === target) {
     return { ok: false, message: `${meta.entity}已经是「${target}」，不用重复操作` }
+  }
+  // 形变记录确认校核前，关联会诊单必须已走完 待判定→会诊→复测→校核 全流程。
+  if (key === 'deformation' && action === '确认校核') {
+    const blocked = assertDeformationVerifyAllowed(String(rows[index]['记录编号'] ?? ''))
+    if (blocked) {
+      return { ok: false, message: blocked }
+    }
   }
   const lastStatus = meta.statuses[meta.statuses.length - 1]
   const updated: EntryRow = {

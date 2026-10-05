@@ -82,7 +82,7 @@ import {
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('threshold')
-const columns = ["阈值编号", "隐患点编号", "监测类型", "注意级阈值", "警示级阈值", "警戒级阈值", "设定人", "生效状态"]
+const columns = ["阈值编号", "隐患点编号", "监测类型", "注意级阈值", "警示级阈值", "警戒级阈值", "生效日期", "设定人", "生效状态"]
 const actions = ["发布生效", "调整阈值", "废止配置"]
 const statuses = ["草稿", "已生效", "已调整", "已废止"]
 const stats = [{"label": "阈值配置数", "value": 0}, {"label": "已生效数", "value": 0}, {"label": "本月调整数", "value": 0}]

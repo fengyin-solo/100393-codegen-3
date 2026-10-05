@@ -67,6 +67,70 @@
       <span>共 {{ total }} 条裂缝监测记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <section class="extra-panel">
+      <header class="page-head">
+        <div>
+          <h2>裂缝加测待办</h2>
+          <p class="page-desc">
+            形变观测会诊中裂缝宽度或速率达注意级及以上时同步生成。阶段必须依次经过待判定→会诊→复测→校核，越过阶段即拒绝。
+          </p>
+        </div>
+      </header>
+
+      <p class="status-legend">
+        <span v-for="item in extraStageSummary" :key="item.stage" class="legend-item">
+          {{ item.stage }}：{{ item.count }}
+        </span>
+      </p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th v-for="column in extraColumns" :key="column">{{ column }}</th>
+            <th>当前阶段</th>
+            <th>版本</th>
+            <th>处理备注</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="todo in extraTodos" :key="String(todo.id)">
+            <td v-for="column in extraColumns" :key="column">{{ todo[column] ?? '—' }}</td>
+            <td>{{ todo.status }}</td>
+            <td>v{{ todo.version }}</td>
+            <td>
+              <input
+                v-model="extraNotes[Number(todo.id)]"
+                class="note-input"
+                :placeholder="String(todo['处理备注'] ?? '') || '推进备注（选填）'"
+                :disabled="todo.status === '校核'"
+              />
+            </td>
+            <td class="row-actions">
+              <button
+                v-if="nextExtraStage(todo)"
+                class="link"
+                type="button"
+                @click="advanceTodo(todo)"
+              >
+                推进至{{ nextExtraStage(todo) }}
+              </button>
+              <span v-else>已完结</span>
+            </td>
+          </tr>
+          <tr v-if="!extraTodos.length">
+            <td :colspan="extraColumns.length + 4" class="empty-state">暂无加测待办</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <footer class="page-foot">
+        <span>共 {{ extraTodos.length }} 条加测待办</span>
+        <span v-if="extraError" class="error-text">{{ extraError }}</span>
+        <span v-if="extraOk" class="ok-text">{{ extraOk }}</span>
+      </footer>
+    </section>
   </section>
 </template>
 
@@ -79,8 +143,11 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { CONSULT_STAGES, advanceExtra, nextStage } from '@/api/consultation-service'
+import { useSessionStore } from '@/stores/session'
 import type { EntryRow } from '@/data/types'
 
+const store = useSessionStore()
 const meta = moduleMeta('crack')
 const columns = ["测点编号", "隐患点编号", "裂缝编号", "初始宽度", "当前宽度", "变化速率", "监测人", "测点状态"]
 const actions = ["记录数据", "标记加速", "确认稳定"]
@@ -98,6 +165,54 @@ const statusSummary = computed(() =>
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+
+// 裂缝加测待办：形变会诊同步生成，走 待判定→会诊→复测→校核 的严格阶段机
+const extraColumns = ["加测单号", "会诊单号", "记录编号", "隐患点编号", "加测原因", "触发级别", "处理人"]
+const extraTodos = ref<EntryRow[]>([])
+const extraNotes = ref<Record<number, string>>({})
+const extraError = ref('')
+const extraOk = ref('')
+const extraStageSummary = computed(() =>
+  CONSULT_STAGES.map((stage) => ({
+    stage,
+    count: extraTodos.value.filter((todo) => String(todo.status) === stage).length,
+  })),
+)
+
+function nextExtraStage(todo: EntryRow) {
+  return nextStage(String(todo.status))
+}
+
+function advanceTodo(todo: EntryRow) {
+  extraError.value = ''
+  extraOk.value = ''
+  const target = nextStage(String(todo.status))
+  if (!target) {
+    return
+  }
+  const result = advanceExtra(
+    Number(todo.id),
+    target,
+    Number(todo.version),
+    store.operator,
+    extraNotes.value[Number(todo.id)] ?? '',
+  )
+  if (!result.ok) {
+    extraError.value = result.message
+    return
+  }
+  extraOk.value = result.message
+  extraNotes.value[Number(todo.id)] = ''
+  loadExtraTodos()
+}
+
+function loadExtraTodos() {
+  try {
+    extraTodos.value = listEntries('crack_extra', {}).items
+  } catch (error) {
+    extraError.value = error instanceof Error ? error.message : '加测待办读取失败'
+  }
+}
 
 function resetFilters() {
   filters.value = {}
@@ -131,7 +246,24 @@ function reload() {
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '裂缝监测列表读取失败'
   }
+  loadExtraTodos()
 }
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.extra-panel {
+  margin-top: 20px;
+  border-top: 2px solid var(--border);
+  padding-top: 8px;
+}
+.note-input {
+  width: 180px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.ok-text { color: #15803d; }
+</style>

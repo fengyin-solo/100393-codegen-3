@@ -18,6 +18,8 @@ export type ModuleMeta = {
   actions: string[]
   actionTargets: Record<string, string>
   metrics: string[]
+  /** 为 true 时状态必须按 statuses 顺序逐级流转，越过阶段即拒绝 */
+  strictSequence?: boolean
 }
 
 export type PageResult = {

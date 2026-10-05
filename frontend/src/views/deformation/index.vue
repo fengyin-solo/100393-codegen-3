@@ -11,6 +11,45 @@
       </div>
     </header>
 
+    <section v-if="showCreate" class="detail-card">
+      <h3>登记形变观测</h3>
+      <p class="panel-tip">
+        提交后自动生成阈值会诊单（待判定）并给出分级建议；原始观测值冻结，后续复测另存新版本，不覆盖本次录入。
+      </p>
+      <form class="stage-form" @submit.prevent="submitCreate">
+        <label class="form-item">
+          <span>隐患点编号</span>
+          <input v-model="form.隐患点编号" placeholder="如 HAZA-0001" />
+        </label>
+        <label class="form-item">
+          <span>观测日期</span>
+          <input v-model="form.观测日期" type="date" />
+        </label>
+        <label class="form-item">
+          <span>水平位移量（mm）</span>
+          <input v-model="form.水平位移量" placeholder="不小于 0 的数字" />
+        </label>
+        <label class="form-item">
+          <span>垂直位移量（mm）</span>
+          <input v-model="form.垂直位移量" placeholder="不小于 0 的数字" />
+        </label>
+        <label class="form-item">
+          <span>裂缝宽度（mm）</span>
+          <input v-model="form.裂缝宽度" placeholder="不小于 0 的数字" />
+        </label>
+        <label class="form-item">
+          <span>变化速率（mm/d）</span>
+          <input v-model="form.变化速率" placeholder="不小于 0 的数字" />
+        </label>
+        <label class="form-item">
+          <span>观测人</span>
+          <input v-model="form.观测人" />
+        </label>
+        <button class="btn primary" type="submit">提交观测</button>
+        <button class="btn ghost" type="button" @click="showCreate = false">取消</button>
+      </form>
+    </section>
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -65,24 +104,28 @@
 
     <footer class="page-foot">
       <span>共 {{ total }} 条形变观测记录</span>
+      <span v-if="infoMessage" class="ok-text">{{ infoMessage }}</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import {
   downloadEntries,
   listEntries,
   moduleMeta,
   runAction as applyAction,
+  submitObservation,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
+import { useSessionStore } from '@/stores/session'
 
+const store = useSessionStore()
 const meta = moduleMeta('deformation')
-const columns = ["记录编号", "隐患点编号", "观测日期", "裂缝宽度", "水平位移量", "垂直位移量", "观测人", "记录状态"]
+const columns = ["记录编号", "隐患点编号", "观测日期", "裂缝宽度", "水平位移量", "垂直位移量", "变化速率", "观测人", "记录状态"]
 const actions = ["提交校核", "确认校核", "标记异常"]
 const statuses = ["已观测", "待校核", "已校核", "异常值", "需复测"]
 const stats = [{"label": "本月观测次数", "value": 0}, {"label": "异常记录数", "value": 0}, {"label": "待校核记录", "value": 0}]
@@ -90,8 +133,19 @@ const stats = [{"label": "本月观测次数", "value": 0}, {"label": "异常记
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
+const infoMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const showCreate = ref(false)
+const form = reactive({
+  隐患点编号: '',
+  观测日期: '',
+  水平位移量: '',
+  垂直位移量: '',
+  裂缝宽度: '',
+  变化速率: '',
+  观测人: '',
+})
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -109,11 +163,33 @@ function exportRows() {
 }
 
 function openCreate() {
-  errorMessage.value = '形变记录登记入口尚未接入审批流'
+  showCreate.value = true
+  errorMessage.value = ''
+  infoMessage.value = ''
+  form.观测人 = form.观测人 || store.operator
+}
+
+function submitCreate() {
+  const result = submitObservation({ ...form })
+  if (!result.ok) {
+    errorMessage.value = result.message
+    infoMessage.value = ''
+    return
+  }
+  showCreate.value = false
+  form.隐患点编号 = ''
+  form.观测日期 = ''
+  form.水平位移量 = ''
+  form.垂直位移量 = ''
+  form.裂缝宽度 = ''
+  form.变化速率 = ''
+  reload()
+  infoMessage.value = result.message
 }
 
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
+  infoMessage.value = ''
   const result = applyAction(meta.key, Number(row.id), action)
   if (!result.ok) {
     errorMessage.value = result.message
@@ -124,6 +200,7 @@ function runAction(action: string, row: EntryRow) {
 
 function reload() {
   errorMessage.value = ''
+  infoMessage.value = ''
   try {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items

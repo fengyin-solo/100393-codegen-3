@@ -54,6 +54,23 @@ export function resetRows(key: string): EntryRow[] {
   return rows
 }
 
+/**
+ * 事务包裹：fn 里可以跨模块多次 saveRows，任何一步抛错都把内存缓存和
+ * localStorage 一起恢复到进入前的快照，保证多步写入要么全成、要么整体回退。
+ */
+export function withTransaction<T>(fn: () => T): T {
+  const snapshot = clone(allRows())
+  try {
+    return fn()
+  } catch (error) {
+    cache = snapshot
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+    }
+    throw error
+  }
+}
+
 export function storageKey(): string {
   return STORAGE_KEY
 }
